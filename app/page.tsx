@@ -367,7 +367,7 @@ export default function Home() {
             Ready to Take Control of Your Health?
           </h2>
           <p className="text-xl text-gray-300 mb-8">
-            Join thousands who've discovered what their data really means. 
+            Join thousands who&apos;ve discovered what their data really means. 
             No more guessing, just clear insights and real progress.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
