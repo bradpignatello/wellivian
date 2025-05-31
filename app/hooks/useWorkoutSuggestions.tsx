@@ -77,7 +77,7 @@ export function WorkoutSuggestions({ exerciseName }: { exerciseName: string }) {
         }
 
         // Calculate days since last workout
-        const lastDate = new Date(exerciseRecord.workouts.workout_date);
+        const lastDate = new Date((exerciseRecord as any).workouts.workout_date);
         const today = new Date();
         const daysSince = Math.floor((today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
 
