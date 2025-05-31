@@ -1,559 +1,708 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react';
+import ChatInterface from './ChatInterface';
+import { supabase } from '@/lib/supabase';
+import { WorkoutHistory } from './WorkoutHistory';
+
+type Set = {
+  warmup: boolean;
+  weight: string;
+  reps: string;
+};
+
+type ExerciseData = {
+  sets: Set[];
+  notes: string;
+};
+
+type WorkoutData = {
+  [key: string]: ExerciseData;
+};
+
+type MuscleGroup = 'chest' | 'back' | 'shoulders' | 'biceps' | 'triceps' | 'quads' | 'hamstrings' | 'glutes' | 'core' | 'calves';
 
 export default function StrengthTracker() {
-  const [activeWorkout, setActiveWorkout] = useState(false)
-  const [selectedExercises, setSelectedExercises] = useState<any[]>([])
-  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0)
-  const [currentSet, setCurrentSet] = useState(1)
-  const [restTimer, setRestTimer] = useState(0)
-  const [isResting, setIsResting] = useState(false)
-  const [supersetMode, setSupersetMode] = useState(true)
-  const [workoutDuration, setWorkoutDuration] = useState(0)
-  const [showExercisePicker, setShowExercisePicker] = useState(false)
-  const [savedTemplates, setSavedTemplates] = useState<any[]>([])
-  const [templateName, setTemplateName] = useState('')
-  const [prs, setPrs] = useState<any[]>([])
-  const [timerPhase, setTimerPhase] = useState<'rest' | 'switch'>('rest')
+  const defaultExercises = [
+    'Deadlifts',
+    'Hanging Leg Lifts',
+    'Bulgarian Split Squats',
+    'Weighted Pull-ups',
+    'Incline Bench',
+    'Single Arm Rows',
+    'Incline Press',
+    'Curls'
+  ];
 
-  // Exercise categories with more exercises
-  const EXERCISE_CATEGORIES = {
-    'Compound Upper': [
-      'Weighted Pull-ups', 'Pull-ups', 'Chin-ups', 'Bench Press', 
-      'Overhead Press', 'Dips', 'Muscle-ups'
-    ],
-    'Compound Lower': [
-      'Deadlifts', 'Squats', 'Front Squats', 'Bulgarian Split Squats', 
-      'Lunges', 'Step-ups', 'Goblet Squats', 'Romanian Deadlifts'
-    ],
-    'Pull': [
-      'Barbell Rows', 'Single Arm DB Row', 'Cable Rows', 'T-Bar Rows',
-      'Face Pulls', 'Lat Pulldowns', 'Seated Cable Rows', 'Kroc Rows'
-    ],
-    'Push': [
-      'Incline DB Press', 'DB Shoulder Press', 'Cable Flyes', 'Dips',
-      'Close-Grip Bench', 'Overhead Press', 'Arnold Press', 'Cable Crossovers'
-    ],
-    'Core': [
-      'Hanging Leg Raises', 'Ab Wheel', 'Planks', 'Cable Crunches',
-      'Russian Twists', 'Dead Bugs', 'Pallof Press', 'Dragon Flags'
-    ],
-    'Arms': [
-      'Curls', 'Hammer Curls', 'Preacher Curls', 'Cable Curls',
-      'Tricep Extensions', 'Overhead Tricep', 'Cable Tricep', '21s'
-    ],
-    'Legs': [
-      'Leg Press', 'Calf Raises', 'Leg Curls', 'Leg Extensions',
-      'Walking Lunges', 'Box Jumps', 'Single Leg Press', 'Nordic Curls'
-    ]
-  }
+  const [exercises, setExercises] = useState(defaultExercises);
+  const [currentExercise, setCurrentExercise] = useState(0);
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [timerMinutes, setTimerMinutes] = useState(3);
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  
+  const commonExerciseMuscleGroups: { [key: string]: MuscleGroup[] } = {
+    'Bench Press': ['chest', 'triceps', 'shoulders'],
+    'Incline Bench': ['chest', 'shoulders', 'triceps'],
+    'Incline Press': ['chest', 'shoulders', 'triceps'],
+    'Dips': ['chest', 'triceps', 'shoulders'],
+    'Overhead Press': ['shoulders', 'triceps', 'core'],
+    'Push-ups': ['chest', 'triceps', 'shoulders'],
+    'Pull-ups': ['back', 'biceps', 'core'],
+    'Weighted Pull-ups': ['back', 'biceps', 'core'],
+    'Rows': ['back', 'biceps'],
+    'Single Arm Rows': ['back', 'biceps', 'core'],
+    'Lat Pulldown': ['back', 'biceps'],
+    'Face Pulls': ['back', 'shoulders'],
+    'Squats': ['quads', 'glutes', 'core'],
+    'Deadlifts': ['back', 'hamstrings', 'glutes', 'core'],
+    'Bulgarian Split Squats': ['quads', 'glutes', 'hamstrings', 'core'],
+    'Lunges': ['quads', 'glutes', 'hamstrings'],
+    'Leg Press': ['quads', 'glutes'],
+    'Romanian Deadlifts': ['hamstrings', 'glutes', 'back'],
+    'Hanging Leg Lifts': ['core'],
+    'Planks': ['core'],
+    'Ab Wheel': ['core'],
+    'Curls': ['biceps'],
+    'Bicep Curls': ['biceps'],
+    'Hammer Curls': ['biceps'],
+    'Tricep Extensions': ['triceps'],
+    'Skull Crushers': ['triceps'],
+  };
 
-  // Your preferred exercises
-  const YOUR_EXERCISES = [
-    { name: 'Weighted Pull-ups', category: 'Compound Upper', defaultRest: 180 },
-    { name: 'Deadlifts', category: 'Compound Lower', defaultRest: 180 },
-    { name: 'Bulgarian Split Squats', category: 'Compound Lower', defaultRest: 180 },
-    { name: 'Incline DB Bench', category: 'Push', defaultRest: 180 },
-    { name: 'Single Arm DB Row', category: 'Pull', defaultRest: 180 },
-    { name: 'Incline DB Press', category: 'Push', defaultRest: 180 },
-    { name: 'Curls', category: 'Arms', defaultRest: 180 },
-    { name: 'Hanging Leg Raises', category: 'Core', defaultRest: 180 }
-  ]
+  const [exerciseMuscleGroups, setExerciseMuscleGroups] = useState<{ [key: string]: MuscleGroup[] }>(
+    () => {
+      const groups: { [key: string]: MuscleGroup[] } = {};
+      exercises.forEach(exercise => {
+        groups[exercise] = commonExerciseMuscleGroups[exercise] || [];
+      });
+      return groups;
+    }
+  );
+  
+  const [workoutData, setWorkoutData] = useState<WorkoutData>(() => {
+    const initialData: WorkoutData = {};
+    exercises.forEach(exercise => {
+      initialData[exercise] = {
+        sets: [
+          { warmup: false, weight: '', reps: '' },
+          { warmup: false, weight: '', reps: '' },
+          { warmup: false, weight: '', reps: '' }
+        ],
+        notes: ''
+      };
+    });
+    return initialData;
+  });
 
-  // Timer countdown with phase tracking
+  const [completedExercises, setCompletedExercises] = useState<string[]>([]);
+
   useEffect(() => {
-    let interval: NodeJS.Timeout
-    if (isResting && restTimer > 0) {
+    let interval: NodeJS.Timeout | null = null;
+    
+    if (isTimerRunning && timerSeconds > 0) {
       interval = setInterval(() => {
-        setRestTimer(prev => {
-          if (prev <= 1) {
-            handleTimerComplete()
-            return 0
+        setTimerSeconds(seconds => {
+          if (seconds <= 1) {
+            setIsTimerRunning(false);
+            alert('Rest time is up!');
+            return 0;
           }
-          // At 90 seconds, alert to switch exercises
-          if (supersetMode && prev === 90 && timerPhase === 'rest') {
-            if ('vibrate' in navigator) {
-              navigator.vibrate(100)
-            }
-            setTimerPhase('switch')
-          }
-          return prev - 1
-        })
-      }, 1000)
-    }
-    return () => clearInterval(interval)
-  }, [isResting, restTimer, supersetMode, timerPhase])
-
-  const handleTimerComplete = () => {
-    setIsResting(false)
-    setTimerPhase('rest')
-    if ('vibrate' in navigator) {
-      navigator.vibrate([200, 100, 200])
-    }
-  }
-
-  // Workout duration timer
-  useEffect(() => {
-    let interval: NodeJS.Timeout
-    if (activeWorkout) {
-      interval = setInterval(() => {
-        setWorkoutDuration(prev => prev + 1)
-      }, 1000)
-    }
-    return () => clearInterval(interval)
-  }, [activeWorkout])
-
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, '0')}`
-  }
-
-  const startWorkout = () => {
-    if (selectedExercises.length === 0) {
-      alert('Please select exercises first!')
-      return
-    }
-    setActiveWorkout(true)
-    setWorkoutDuration(0)
-    setPrs([])
-  }
-
-  const endWorkout = () => {
-    setActiveWorkout(false)
-    // Show PR summary if any
-    if (prs.length > 0) {
-      alert(`Workout Complete! You hit ${prs.length} PRs today! 💪`)
-    }
-  }
-
-  const addExercise = (exercise: any) => {
-    setSelectedExercises([...selectedExercises, { ...exercise, sets: [] }])
-  }
-
-  const removeExercise = (index: number) => {
-    setSelectedExercises(selectedExercises.filter((_, i) => i !== index))
-  }
-
-  const saveTemplate = () => {
-    if (templateName && selectedExercises.length > 0) {
-      const newTemplate = {
-        name: templateName,
-        exercises: selectedExercises.map(e => ({ name: e.name, category: e.category, defaultRest: e.defaultRest }))
-      }
-      setSavedTemplates([...savedTemplates, newTemplate])
-      setTemplateName('')
-      alert('Template saved!')
-    }
-  }
-
-  const loadTemplate = (template: any) => {
-    setSelectedExercises(template.exercises.map((e: any) => ({ ...e, sets: [] })))
-  }
-
-  const logSet = (weight: number, reps: number) => {
-    const updatedExercises = [...selectedExercises]
-    const currentExercise = updatedExercises[currentExerciseIndex]
-    
-    // Check if it's a PR (simplified check)
-    const previousSets = currentExercise.sets || []
-    const isPR = previousSets.length === 0 || weight > Math.max(...previousSets.map((s: any) => s.weight))
-    
-    if (isPR) {
-      setPrs([...prs, { exercise: currentExercise.name, weight, reps }])
-    }
-    
-    currentExercise.sets.push({ weight, reps, setNumber: currentSet })
-    setSelectedExercises(updatedExercises)
-    
-    // Start rest timer
-    setRestTimer(180) // Always 3 minutes for superset
-    setIsResting(true)
-    setTimerPhase('rest')
-    
-    // Move to next set
-    if (currentSet < 3) {
-      setCurrentSet(currentSet + 1)
+          return seconds - 1;
+        });
+      }, 1000);
     } else {
-      // Completed all sets for this exercise
-      setCurrentSet(1)
-      if (currentExerciseIndex < selectedExercises.length - 1) {
-        setCurrentExerciseIndex(currentExerciseIndex + 1)
-      } else {
-        // Workout complete
-        endWorkout()
+      setIsTimerRunning(false);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isTimerRunning, timerSeconds]);
+
+  const startTimer = () => {
+    if (timerMinutes > 0) {
+      setTimerSeconds(timerMinutes * 60);
+      setIsTimerRunning(true);
+    }
+  };
+
+  const stopTimer = () => {
+    setIsTimerRunning(false);
+  };
+
+  const resetTimer = () => {
+    setIsTimerRunning(false);
+    setTimerSeconds(0);
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const updateSet = (setIndex: number, field: 'weight' | 'reps', value: string) => {
+    const exercise = exercises[currentExercise];
+    if (!exercise || !workoutData[exercise]) return;
+    
+    setWorkoutData(prev => ({
+      ...prev,
+      [exercise]: {
+        ...prev[exercise],
+        sets: prev[exercise].sets.map((set, index) =>
+          index === setIndex ? { ...set, [field]: value } : set
+        )
+      }
+    }));
+  };
+
+  const updateWarmup = (setIndex: number, isWarmup: boolean) => {
+    const exercise = exercises[currentExercise];
+    if (!exercise || !workoutData[exercise]) return;
+    
+    setWorkoutData(prev => ({
+      ...prev,
+      [exercise]: {
+        ...prev[exercise],
+        sets: prev[exercise].sets.map((set, index) =>
+          index === setIndex ? { ...set, warmup: isWarmup } : set
+        )
+      }
+    }));
+  };
+
+  const addSet = () => {
+    const exercise = exercises[currentExercise];
+    if (!exercise || !workoutData[exercise]) return;
+    
+    setWorkoutData(prev => ({
+      ...prev,
+      [exercise]: {
+        ...prev[exercise],
+        sets: [...prev[exercise].sets, { warmup: false, weight: '', reps: '' }]
+      }
+    }));
+  };
+
+  const deleteSet = (setIndex: number) => {
+    const exercise = exercises[currentExercise];
+    if (!exercise || !workoutData[exercise]) return;
+    
+    setWorkoutData(prev => ({
+      ...prev,
+      [exercise]: {
+        ...prev[exercise],
+        sets: prev[exercise].sets.filter((_, index) => index !== setIndex)
+      }
+    }));
+  };
+
+  const updateNotes = (value: string) => {
+    const exercise = exercises[currentExercise];
+    if (!exercise || !workoutData[exercise]) return;
+    
+    setWorkoutData(prev => ({
+      ...prev,
+      [exercise]: {
+        ...prev[exercise],
+        notes: value
+      }
+    }));
+  };
+
+  const saveWorkout = async () => {
+    try {
+      const userId = 'default-user';
+      
+      const { data: workout, error: workoutError } = await supabase
+        .from('workouts')
+        .insert({
+          user_id: userId,
+          notes: `Workout completed with ${exercises.length} exercises`
+        })
+        .select()
+        .single();
+
+      if (workoutError) throw workoutError;
+
+      for (let i = 0; i < exercises.length; i++) {
+        const exerciseName = exercises[i];
+        const exerciseData = workoutData[exerciseName];
+        
+        const hasData = exerciseData.sets.some(set => set.weight || set.reps);
+        if (!hasData) continue;
+
+        const { data: exercise, error: exerciseError } = await supabase
+          .from('workout_exercises')
+          .insert({
+            workout_id: workout.id,
+            exercise_name: exerciseName,
+            exercise_order: i,
+            notes: exerciseData.notes
+          })
+          .select()
+          .single();
+
+        if (exerciseError) throw exerciseError;
+
+        const setsToInsert = exerciseData.sets
+          .filter(set => set.weight || set.reps)
+          .map((set, index) => ({
+            exercise_id: exercise.id,
+            set_number: index + 1,
+            weight: parseFloat(set.weight) || 0,
+            reps: parseInt(set.reps) || 0,
+            is_warmup: set.warmup
+          }));
+
+        if (setsToInsert.length > 0) {
+          const { error: setsError } = await supabase
+            .from('workout_sets')
+            .insert(setsToInsert);
+
+          if (setsError) throw setsError;
+        }
+      }
+
+      console.log('Workout saved successfully!');
+      
+      const exercise = exercises[currentExercise];
+      if (!completedExercises.includes(exercise)) {
+        setCompletedExercises([...completedExercises, exercise]);
+      }
+      
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+      
+    } catch (error) {
+      console.error('Error saving workout:', error);
+      alert('Failed to save workout. Please try again.');
+    }
+  };
+
+  const getPairingQuality = (exercise1: string, exercise2: string): 'great' | 'good' | 'neutral' | 'avoid' => {
+    const muscles1 = exerciseMuscleGroups[exercise1] || [];
+    const muscles2 = exerciseMuscleGroups[exercise2] || [];
+    
+    if (muscles1.length === 0 || muscles2.length === 0) return 'neutral';
+    
+    const overlap = muscles1.filter(muscle => muscles2.includes(muscle));
+    const overlapPercentage = overlap.length / Math.max(muscles1.length, muscles2.length);
+    
+    const isPushPull = 
+      (muscles1.includes('chest') && muscles2.includes('back')) ||
+      (muscles1.includes('back') && muscles2.includes('chest')) ||
+      (muscles1.includes('triceps') && muscles2.includes('biceps')) ||
+      (muscles1.includes('biceps') && muscles2.includes('triceps'));
+    
+    if (isPushPull || (overlapPercentage === 0 && muscles1.length > 0 && muscles2.length > 0)) {
+      return 'great';
+    }
+    
+    if (overlapPercentage > 0.6) {
+      return 'avoid';
+    }
+    
+    if (overlapPercentage < 0.3) {
+      return 'good';
+    }
+    
+    return 'neutral';
+  };
+
+  const getExerciseStatus = (exerciseName: string, index: number) => {
+    if (index === currentExercise) return 'current';
+    if (completedExercises.includes(exerciseName)) return 'completed';
+    
+    const currentExerciseName = exercises[currentExercise];
+    const pairingQuality = getPairingQuality(currentExerciseName, exerciseName);
+    
+    return pairingQuality;
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'current': return 'bg-blue-500 text-white border-blue-500';
+      case 'completed': return 'bg-gray-300 text-gray-600 border-gray-300';
+      case 'great': return 'bg-green-100 text-green-700 border-green-400 ring-2 ring-green-400 ring-opacity-50';
+      case 'good': return 'bg-green-50 text-green-600 border-green-300';
+      case 'avoid': return 'bg-red-100 text-red-700 border-red-300';
+      default: return 'bg-white text-gray-700 border-gray-200';
+    }
+  };
+
+  const handleDragStart = (index: number) => {
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === dropIndex) return;
+
+    const draggedExercise = exercises[draggedIndex];
+    const newExercises = [...exercises];
+    
+    newExercises.splice(draggedIndex, 1);
+    newExercises.splice(dropIndex, 0, draggedExercise);
+    
+    setExercises(newExercises);
+    
+    if (currentExercise === draggedIndex) {
+      setCurrentExercise(dropIndex);
+    } else if (draggedIndex < currentExercise && dropIndex >= currentExercise) {
+      setCurrentExercise(currentExercise - 1);
+    } else if (draggedIndex > currentExercise && dropIndex <= currentExercise) {
+      setCurrentExercise(currentExercise + 1);
+    }
+    
+    setDraggedIndex(null);
+  };
+
+  const startEditingExercise = (index: number) => {
+    setEditingIndex(index);
+    setEditValue(exercises[index]);
+  };
+
+  const saveExerciseName = () => {
+    if (editingIndex !== null && editValue.trim()) {
+      const oldName = exercises[editingIndex];
+      const newExercises = [...exercises];
+      newExercises[editingIndex] = editValue.trim();
+      setExercises(newExercises);
+      
+      const newWorkoutData = { ...workoutData };
+      newWorkoutData[editValue.trim()] = newWorkoutData[oldName] || {
+        sets: [
+          { warmup: false, weight: '', reps: '' },
+          { warmup: false, weight: '', reps: '' },
+          { warmup: false, weight: '', reps: '' }
+        ],
+        notes: ''
+      };
+      delete newWorkoutData[oldName];
+      setWorkoutData(newWorkoutData);
+      
+      const newMuscleGroups = { ...exerciseMuscleGroups };
+      newMuscleGroups[editValue.trim()] = commonExerciseMuscleGroups[editValue.trim()] || newMuscleGroups[oldName] || [];
+      delete newMuscleGroups[oldName];
+      setExerciseMuscleGroups(newMuscleGroups);
+      
+      if (completedExercises.includes(oldName)) {
+        setCompletedExercises(completedExercises.map(ex => ex === oldName ? editValue.trim() : ex));
       }
     }
-  }
+    setEditingIndex(null);
+    setEditValue('');
+  };
 
-  const getCurrentExercisePair = () => {
-    if (!supersetMode) return null
-    const pairIndex = Math.floor(currentExerciseIndex / 2) * 2
-    return {
-      first: selectedExercises[pairIndex],
-      second: selectedExercises[pairIndex + 1]
+  const addNewExercise = () => {
+    const newExerciseName = 'New Exercise';
+    setExercises([...exercises, newExerciseName]);
+    setWorkoutData({
+      ...workoutData,
+      [newExerciseName]: {
+        sets: [
+          { warmup: false, weight: '', reps: '' },
+          { warmup: false, weight: '', reps: '' },
+          { warmup: false, weight: '', reps: '' }
+        ],
+        notes: ''
+      }
+    });
+    setCurrentExercise(exercises.length);
+    setTimeout(() => startEditingExercise(exercises.length), 100);
+  };
+
+  const deleteExercise = (index: number) => {
+    if (exercises.length > 1) {
+      const exerciseToDelete = exercises[index];
+      const newExercises = exercises.filter((_, i) => i !== index);
+      setExercises(newExercises);
+      
+      const newWorkoutData = { ...workoutData };
+      delete newWorkoutData[exerciseToDelete];
+      setWorkoutData(newWorkoutData);
+      
+      const newMuscleGroups = { ...exerciseMuscleGroups };
+      delete newMuscleGroups[exerciseToDelete];
+      setExerciseMuscleGroups(newMuscleGroups);
+      
+      setCompletedExercises(completedExercises.filter(ex => ex !== exerciseToDelete));
+      
+      if (currentExercise === index) {
+        setCurrentExercise(0);
+      } else if (currentExercise > index) {
+        setCurrentExercise(currentExercise - 1);
+      }
     }
-  }
+  };
+
+  const exercise = exercises[currentExercise] || exercises[0];
+  const data = workoutData[exercise] || { 
+    sets: [
+      { warmup: false, weight: '', reps: '' },
+      { warmup: false, weight: '', reps: '' },
+      { warmup: false, weight: '', reps: '' }
+    ], 
+    notes: '' 
+  };
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-gray-900 to-black text-white">
-      {/* Header */}
-      <div className="sticky top-0 bg-gray-900/95 backdrop-blur-md z-40 border-b border-gray-800">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold">Strength Tracker</h1>
-              <a href="/" className="text-sm text-gray-400 hover:text-gray-300">
-                ← Back to Home
-              </a>
-            </div>
-            {activeWorkout && (
-              <div className="text-right">
-                <p className="text-sm text-gray-400">Duration</p>
-                <p className="text-xl font-bold">{formatTime(workoutDuration)}</p>
-              </div>
-            )}
-          </div>
-        </div>
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Left Sidebar - Workout History */}
+      <div className="hidden lg:block">
+        <WorkoutHistory currentExercise={exercise} />
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {!activeWorkout ? (
-          // Pre-workout screen
-          <div className="space-y-8">
-            <div className="bg-gray-800 rounded-lg p-8 text-center">
-              <h2 className="text-3xl font-bold mb-4">Ready to Train?</h2>
-              <p className="text-gray-400 mb-8">
-                Build your workout and crush it.
-              </p>
+      {/* Main Content */}
+      <div className="flex-1 p-5">
+        <div className="max-w-4xl mx-auto">
+          {/* Header */}
+          <div className="flex justify-between items-center mb-8">
+            <h1 className="text-4xl font-bold text-gray-900">Workout Log</h1>
+            
+            {/* Timer */}
+            <div className="bg-white p-4 rounded-xl shadow-sm flex items-center gap-4">
+              <div className="text-2xl font-semibold font-mono min-w-[80px] text-center">
+                {formatTime(timerSeconds)}
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    className="w-12 px-2 py-1 border border-gray-200 rounded-md text-center"
+                    value={timerMinutes}
+                    onChange={(e) => setTimerMinutes(parseInt(e.target.value) || 0)}
+                    min="0"
+                    max="59"
+                  />
+                  <span className="text-xs text-gray-500">min</span>
+                </div>
+                <button
+                  onClick={startTimer}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                >
+                  Start
+                </button>
+                <button
+                  onClick={stopTimer}
+                  className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                >
+                  Stop
+                </button>
+                <button
+                  onClick={resetTimer}
+                  className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Exercise Tabs */}
+          <div className="mb-6">
+            <div className="flex gap-2 overflow-x-auto pb-2">
+              {exercises.map((ex, index) => {
+                const status = getExerciseStatus(ex, index);
+                const statusColor = getStatusColor(status);
+                
+                return (
+                  <div 
+                    key={`${ex}-${index}`} 
+                    className="relative group"
+                    draggable={editingIndex !== index}
+                    onDragStart={() => handleDragStart(index)}
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, index)}
+                  >
+                    {editingIndex === index ? (
+                      <input
+                        type="text"
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onBlur={saveExerciseName}
+                        onKeyPress={(e) => e.key === 'Enter' && saveExerciseName()}
+                        className="px-5 py-3 rounded-lg font-medium border-2 border-blue-500 focus:outline-none"
+                        autoFocus
+                      />
+                    ) : (
+                      <button
+                        onClick={() => setCurrentExercise(index)}
+                        onDoubleClick={() => startEditingExercise(index)}
+                        className={`px-5 py-3 rounded-lg font-medium whitespace-nowrap transition-all border-2 cursor-move ${statusColor} ${
+                          draggedIndex === index ? 'opacity-50' : ''
+                        }`}
+                      >
+                        <span className="mr-2 text-xs opacity-50">⋮⋮</span>
+                        {ex}
+                        {status === 'completed' && ' ✓'}
+                      </button>
+                    )}
+                    
+                    {exercises.length > 1 && (
+                      <button
+                        onClick={() => deleteExercise(index)}
+                        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
               
               <button
-                onClick={startWorkout}
-                disabled={selectedExercises.length === 0}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed px-8 py-4 rounded-lg text-xl font-semibold transition-all transform hover:scale-105"
+                onClick={addNewExercise}
+                className="px-5 py-3 rounded-lg font-medium whitespace-nowrap transition-all border-2 border-dashed border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-600"
               >
-                Start Workout
+                + Add Exercise
               </button>
+            </div>
+            
+            <div className="flex gap-4 mt-3 text-sm">
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-green-100 border-2 border-green-400 rounded ring-2 ring-green-400 ring-opacity-50"></div>
+                <span className="text-gray-600">Great pairing</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-green-50 border border-green-300 rounded"></div>
+                <span className="text-gray-600">Good pairing</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-red-100 border border-red-300 rounded"></div>
+                <span className="text-gray-600">Avoid pairing</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-gray-300 rounded"></div>
+                <span className="text-gray-600">Completed</span>
+              </div>
+            </div>
+            
+            <div className="mt-2 text-xs text-gray-500">
+              Tip: Double-click to rename • Drag to reorder exercises
+            </div>
+          </div>
+
+          {/* Exercise Content */}
+          <div className="bg-white rounded-2xl p-6 shadow-lg">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-semibold">{exercise}</h2>
+              <button
+                onClick={saveWorkout}
+                className="px-5 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+              >
+                Save Workout
+              </button>
+            </div>
+
+            <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+              <span className="text-sm font-semibold text-blue-700">Muscle groups: </span>
+              <span className="text-sm text-blue-600">
+                {exerciseMuscleGroups[exercise]?.join(', ') || 'Not specified'}
+              </span>
+            </div>
+
+            <div className="mb-6">
+              <div className="grid grid-cols-5 gap-4 mb-3 text-sm font-semibold text-gray-600 uppercase">
+                <div>Set</div>
+                <div>Warmup</div>
+                <div>Weight (lbs)</div>
+                <div>Reps</div>
+                <div>Action</div>
+              </div>
               
-              <div className="mt-6 flex justify-center gap-6">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={supersetMode}
-                    onChange={(e) => setSupersetMode(e.target.checked)}
-                    className="w-5 h-5"
-                  />
-                  <span>Superset Mode (3 min paired)</span>
-                </label>
-              </div>
-            </div>
-
-            {/* Saved Templates */}
-            {savedTemplates.length > 0 && (
-              <div className="bg-gray-800 rounded-lg p-6">
-                <h3 className="text-xl font-semibold mb-4">Saved Templates</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {savedTemplates.map((template, index) => (
-                    <button
-                      key={index}
-                      onClick={() => loadTemplate(template)}
-                      className="bg-gray-700 hover:bg-gray-600 p-4 rounded-lg text-left"
-                    >
-                      <p className="font-semibold">{template.name}</p>
-                      <p className="text-sm text-gray-400">
-                        {template.exercises.length} exercises
-                      </p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Selected Exercises */}
-            <div className="bg-gray-800 rounded-lg p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-semibold">
-                  Your Workout {selectedExercises.length > 0 && `(${selectedExercises.length} exercises)`}
-                </h3>
-                <button
-                  onClick={() => setShowExercisePicker(true)}
-                  className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg"
-                >
-                  + Add Exercise
-                </button>
-              </div>
-
-              {selectedExercises.length > 0 ? (
-                <>
-                  <div className="space-y-2 mb-4">
-                    {selectedExercises.map((exercise, index) => (
-                      <div key={index} className="bg-gray-700 rounded p-3 flex justify-between items-center">
-                        <div>
-                          <span className="font-semibold">{exercise.name}</span>
-                          <span className="text-sm text-gray-400 ml-2">({exercise.category})</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {supersetMode && index % 2 === 1 && (
-                            <span className="text-xs bg-blue-600 px-2 py-1 rounded">
-                              Paired with {selectedExercises[index - 1]?.name}
-                            </span>
-                          )}
-                          <button
-                            onClick={() => removeExercise(index)}
-                            className="text-red-400 hover:text-red-300 text-xl"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+              {data.sets.map((set, index) => (
+                <div key={index} className="grid grid-cols-5 gap-4 items-center py-3 border-b border-gray-100">
+                  <div className="font-semibold">{index + 1}</div>
+                  <div>
+                    {index === 0 && (
+                      <input
+                        type="checkbox"
+                        checked={set.warmup}
+                        onChange={(e) => updateWarmup(index, e.target.checked)}
+                        className="w-4 h-4 cursor-pointer"
+                      />
+                    )}
                   </div>
-
-                  {/* Save as Template */}
-                  <div className="flex gap-2 mt-4">
+                  <div>
                     <input
-                      type="text"
-                      placeholder="Template name..."
-                      value={templateName}
-                      onChange={(e) => setTemplateName(e.target.value)}
-                      className="flex-1 bg-gray-700 rounded px-3 py-2"
+                      type="number"
+                      value={set.weight}
+                      onChange={(e) => updateSet(index, 'weight', e.target.value)}
+                      placeholder="0"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
-                    <button
-                      onClick={saveTemplate}
-                      className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded"
-                    >
-                      Save Template
-                    </button>
                   </div>
-                </>
-              ) : (
-                <p className="text-gray-400 text-center py-8">
-                  No exercises selected. Click "+ Add Exercise" to build your workout!
-                </p>
-              )}
-            </div>
-          </div>
-        ) : (
-          // Active workout screen
-          <div className="space-y-8">
-            {/* Rest Timer */}
-            {isResting && (
-              <div className="bg-gray-800 rounded-lg p-8 text-center">
-                <h3 className="text-xl text-gray-400 mb-4">
-                  {timerPhase === 'rest' ? 'Rest Time' : 'Switch Exercises!'}
-                </h3>
-                <p className="text-7xl font-bold text-blue-500 mb-4">{formatTime(restTimer)}</p>
-                
-                {supersetMode && (
-                  <div className="space-y-2">
-                    {restTimer > 90 ? (
-                      <p className="text-gray-400">Switch exercises at 1:30</p>
-                    ) : (
-                      <p className="text-yellow-400 animate-pulse">
-                        Do: {getCurrentExercisePair()?.second?.name || 'Next exercise'}
-                      </p>
+                  <div>
+                    <input
+                      type="number"
+                      value={set.reps}
+                      onChange={(e) => updateSet(index, 'reps', e.target.value)}
+                      placeholder="0"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    {data.sets.length > 1 && (
+                      <button
+                        onClick={() => deleteSet(index)}
+                        className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm"
+                      >
+                        Delete
+                      </button>
                     )}
                   </div>
-                )}
-              </div>
-            )}
-
-            {/* Current Exercise */}
-            {!isResting && selectedExercises[currentExerciseIndex] && (
-              <div className="bg-gray-800 rounded-lg p-6">
-                <h2 className="text-2xl font-bold mb-2">
-                  {selectedExercises[currentExerciseIndex].name}
-                </h2>
-                <p className="text-gray-400 mb-6">Set {currentSet} of 3</p>
-                
-                <SetLogger onLog={logSet} />
-                
-                {/* Previous sets */}
-                {selectedExercises[currentExerciseIndex].sets.length > 0 && (
-                  <div className="mt-6 pt-6 border-t border-gray-700">
-                    <h4 className="text-sm text-gray-400 mb-2">Previous Sets</h4>
-                    {selectedExercises[currentExerciseIndex].sets.map((set: any, i: number) => (
-                      <p key={i} className="text-sm">
-                        Set {set.setNumber}: {set.weight} lbs × {set.reps} reps
-                      </p>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Exercise Progress */}
-            <div className="bg-gray-800 rounded-lg p-4">
-              <h4 className="text-sm text-gray-400 mb-2">Workout Progress</h4>
-              <div className="flex gap-2 flex-wrap">
-                {selectedExercises.map((exercise, index) => (
-                  <div
-                    key={index}
-                    className={`text-xs px-2 py-1 rounded ${
-                      index < currentExerciseIndex ? 'bg-green-600' :
-                      index === currentExerciseIndex ? 'bg-blue-600' :
-                      'bg-gray-700'
-                    }`}
-                  >
-                    {exercise.name}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* End Workout Button */}
-            <button
-              onClick={endWorkout}
-              className="w-full bg-red-600 hover:bg-red-700 py-3 rounded-lg"
-            >
-              End Workout
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Exercise Picker Modal */}
-      {showExercisePicker && (
-        <ExercisePicker
-          onSelect={(exercise) => {
-            addExercise(exercise)
-            setShowExercisePicker(false)
-          }}
-          onClose={() => setShowExercisePicker(false)}
-          categories={EXERCISE_CATEGORIES}
-          yourExercises={YOUR_EXERCISES}
-        />
-      )}
-    </main>
-  )
-}
-
-// Set Logger Component
-function SetLogger({ onLog }: { onLog: (weight: number, reps: number) => void }) {
-  const [weight, setWeight] = useState('')
-  const [reps, setReps] = useState('')
-
-  const handleSubmit = () => {
-    if (weight && reps) {
-      onLog(Number(weight), Number(reps))
-      setWeight('')
-      setReps('')
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm text-gray-400 mb-2">Weight (lbs)</label>
-          <input
-            type="number"
-            value={weight}
-            onChange={(e) => setWeight(e.target.value)}
-            className="w-full bg-gray-700 rounded-lg px-4 py-3 text-2xl text-center font-bold"
-            placeholder="0"
-          />
-        </div>
-        <div>
-          <label className="block text-sm text-gray-400 mb-2">Reps</label>
-          <input
-            type="number"
-            value={reps}
-            onChange={(e) => setReps(e.target.value)}
-            className="w-full bg-gray-700 rounded-lg px-4 py-3 text-2xl text-center font-bold"
-            placeholder="0"
-          />
-        </div>
-      </div>
-      
-      <button
-        onClick={handleSubmit}
-        className="w-full bg-blue-600 hover:bg-blue-700 py-4 rounded-lg text-xl font-semibold"
-      >
-        Log Set
-      </button>
-    </div>
-  )
-}
-
-// Exercise Picker Modal
-function ExercisePicker({ onSelect, onClose, categories, yourExercises }: any) {
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
-
-  return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-gray-800 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-hidden">
-        <div className="p-6 border-b border-gray-700 flex items-center justify-between">
-          <h3 className="text-2xl font-bold">Select Exercise</h3>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white text-3xl"
-          >
-            ×
-          </button>
-        </div>
-
-        <div className="p-6 overflow-y-auto max-h-[60vh]">
-          {/* Your Exercises */}
-          <div className="mb-6">
-            <h4 className="text-sm font-semibold text-gray-400 mb-3">YOUR EXERCISES</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {yourExercises.map((exercise: any) => (
-                <button
-                  key={exercise.name}
-                  onClick={() => onSelect(exercise)}
-                  className="bg-blue-600 hover:bg-blue-700 p-3 rounded-lg text-left"
-                >
-                  <p className="font-semibold">{exercise.name}</p>
-                  <p className="text-xs text-gray-300">{exercise.category}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Categories */}
-          <div>
-            <h4 className="text-sm font-semibold text-gray-400 mb-3">ALL EXERCISES BY CATEGORY</h4>
-            <div className="space-y-2">
-              {Object.entries(categories).map(([category, exercises]) => (
-                <div key={category}>
-                  <button
-                    onClick={() => setSelectedCategory(
-                      selectedCategory === category ? null : category
-                    )}
-                    className="w-full flex items-center justify-between bg-gray-700 hover:bg-gray-600 p-3 rounded-lg"
-                  >
-                    <span className="font-semibold">{category}</span>
-                    <span className="text-gray-400">
-                      {selectedCategory === category ? '−' : '+'}
-                    </span>
-                  </button>
-                  
-                  {selectedCategory === category && (
-                    <div className="mt-2 grid grid-cols-2 gap-2 pl-4">
-                      {(exercises as string[]).map((exercise) => (
-                        <button
-                          key={exercise}
-                          onClick={() => onSelect({ 
-                            name: exercise, 
-                            category,
-                            defaultRest: 180,
-                            sets: []
-                          })}
-                          className="bg-gray-600 hover:bg-gray-500 p-2 rounded text-sm text-left"
-                        >
-                          {exercise}
-                        </button>
-                      ))}
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
+
+            <button
+              onClick={addSet}
+              className="w-full py-3 border-2 border-dashed border-gray-300 rounded-lg text-blue-500 font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+            >
+              <span className="text-xl">+</span>
+              Add Set
+            </button>
+
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <label className="block font-semibold mb-2">Notes</label>
+              <textarea
+                value={data.notes}
+                onChange={(e) => updateNotes(e.target.value)}
+                placeholder="Add notes about this exercise..."
+                className="w-full p-3 border border-gray-200 rounded-lg resize-none h-24 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
           </div>
+
+          {/* Success Message */}
+          {showSuccess && (
+            <div className="fixed top-5 right-5 bg-green-500 text-white px-5 py-3 rounded-lg shadow-lg">
+              Workout saved!
+            </div>
+          )}
+          
+          {/* AI Chat Interface */}
+          <ChatInterface
+            exercises={exercises}
+            currentExercise={exercise}
+            workoutData={workoutData}
+            onUpdateExercises={setExercises}
+            onSuggestPairing={(pairings) => {
+              console.log('AI suggested pairings:', pairings);
+            }}
+          />
         </div>
       </div>
     </div>
-  )
+  );
 }

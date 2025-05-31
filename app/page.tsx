@@ -33,7 +33,7 @@ export default function Home() {
               </h1>
               <p className="text-xl md:text-2xl text-gray-300 mb-8">
                 All your health data. One platform. Real insights that don&apos;t sugarcoat reality. 
-                Built for athletes who want the truth, not motivation quotes.
+                Built for athletes who want the truth, not motivational quotes.
               </p>
               <div className="flex flex-col sm:flex-row gap-4">
                 <button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white text-lg px-8 py-4 rounded-lg transition transform hover:scale-105 shadow-xl">

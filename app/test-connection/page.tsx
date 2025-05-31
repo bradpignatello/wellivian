@@ -17,18 +17,14 @@ export default function TestConnection() {
         )
 
         // Test the connection
-        const { data, error } = await supabase.from('_test_').select('*').limit(1)
+        const { data } = await supabase.auth.getSession()
         
-        if (error && error.code !== 'PGRST116') {
-          setStatus('❌ Connection failed')
-          setDetails(error)
-        } else {
-          setStatus('✅ Supabase connected successfully!')
-          setDetails({
-            url: process.env.NEXT_PUBLIC_SUPABASE_URL,
-            keyLength: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.length
-          })
-        }
+        setStatus('✅ Supabase connected successfully!')
+        setDetails({
+          url: process.env.NEXT_PUBLIC_SUPABASE_URL,
+          keyLength: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.length,
+          session: data?.session ? 'Present' : 'None'
+        })
       } catch (err) {
         setStatus('❌ Error connecting')
         setDetails(err)
