@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
-
+import { supabase } from '@/lib/supabase';
 export default function TestConnection() {
   const [status, setStatus] = useState<string>('Checking connection...')
   const [details, setDetails] = useState<any>(null)
