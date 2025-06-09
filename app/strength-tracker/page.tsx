@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import ChatInterface from './ChatInterface';
 import { supabase } from '@/lib/supabase';
 
@@ -22,7 +23,9 @@ type WorkoutData = {
 type MuscleGroup = 'chest' | 'back' | 'shoulders' | 'biceps' | 'triceps' | 'quads' | 'hamstrings' | 'glutes' | 'core' | 'calves';
 
 export default function StrengthTracker() {
-  const defaultExercises = [
+    const router = useRouter();
+  
+    const defaultExercises = [
     'Deadlifts',
     'Hanging Leg Lifts',
     'Bulgarian Split Squats',
