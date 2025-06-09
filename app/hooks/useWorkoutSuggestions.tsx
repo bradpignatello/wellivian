@@ -111,7 +111,7 @@ export function WorkoutSuggestions({ exerciseName }: { exerciseName: string }) {
           setSuggestion({
             exercise: exerciseName,
             lastWorkout: {
-              date: exerciseRecord.workouts.workout_date,
+              date: exerciseRecord.workouts[0]?.workout_date || '',
               sets: sets
             },
             recommendation,
