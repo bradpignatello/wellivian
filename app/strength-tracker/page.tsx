@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import ChatInterface from './ChatInterface';
 import { supabase } from '@/lib/supabase';
-import { WorkoutHistory } from './WorkoutHistory';
 
 type Set = {
   warmup: boolean;
