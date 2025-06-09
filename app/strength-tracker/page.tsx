@@ -458,9 +458,16 @@ export default function StrengthTracker() {
     <div className="min-h-screen bg-gray-50 flex">
       {/* Left Sidebar - Workout History */}
       <div className="hidden lg:block">
-        <WorkoutHistory currentExercise={exercise} />
-      </div>
-
+  <div className="bg-gray-800 p-4 rounded-lg">
+    <h3 className="text-lg font-semibold mb-2">Workout History</h3>
+    <button
+      onClick={() => router.push('/workout-history')}
+      className="text-orange-500 hover:text-orange-400"
+    >
+      View Full History →
+    </button>
+  </div>
+</div>
       {/* Main Content */}
       <div className="flex-1 p-5">
         <div className="max-w-4xl mx-auto">
